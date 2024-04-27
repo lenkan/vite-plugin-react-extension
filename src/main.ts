@@ -68,8 +68,14 @@ function renderDevBackground(prefix: string, backgroundScript: string) {
 
 function renderDevContent(prefix: string, contentScripts: string[]) {
   return renderLines([
-    `import("${prefix}/@vite/client");`,
-    ...contentScripts.map((mod) => `import("${prefix}/${mod}")`),
+    `import("${prefix}/@react-refresh").then(async ({ default: RefreshRuntime }) => {`,
+    `  RefreshRuntime.injectIntoGlobalHook(window);`,
+    `  window.$RefreshReg$ = () => {};`,
+    `  window.$RefreshSig$ = () => (type) => type;`,
+    `  window.__vite_plugin_react_preamble_installed__ = true;`,
+    `  import("${prefix}/@vite/client");`,
+    ...contentScripts.map((mod) => `  import("${prefix}/${mod}")`),
+    `});`,
   ]);
 }
 
