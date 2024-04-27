@@ -1,15 +1,19 @@
 {
-  "name": "@lenkan/vite-extension-plugin",
+  "name": "vite-plugin-extension",
   "version": "0.0.1",
   "description": "Vite plugin for react based extension",
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
   "type": "module",
+  "private": false,
   "scripts": {
     "build": "tsc"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Daniel Lenksjö",
+  "license": "MIT",
+  "repository": {
+    "url": "https://github.com/lenkan/vite-plugin-extension"
+  },
   "devDependencies": {
     "@types/node": "^20.12.7",
     "typescript": "^5.4.5",
