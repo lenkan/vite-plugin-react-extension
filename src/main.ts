@@ -1,4 +1,4 @@
-import type { PluginOption, ResolvedConfig, ViteDevServer } from "vite";
+import type { BuildOptions, PluginOption, ResolvedConfig, ViteDevServer } from "vite";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, parse } from "node:path";
 
@@ -24,6 +24,14 @@ export interface Manifest {
   content_security_policy: {
     extension_pages: string;
   };
+  web_accessible_resources: WebAccessibleResource[];
+}
+
+export interface WebAccessibleResource {
+  resources: string[];
+  matches?: string[];
+  use_dynamic_url?: boolean;
+  extension_ids?: string[];
 }
 
 function renderDevScript(prefix: string) {
@@ -79,6 +87,27 @@ function renderDevContent(prefix: string, contentScripts: string[]) {
   ]);
 }
 
+function removeUndefinedValues(obj: Record<string, string | undefined>): Record<string, string> {
+  return Object.entries(obj).reduce<Record<string, string>>((res, [key, value]) => {
+    return value ? { ...res, [key]: value } : res;
+  }, {});
+}
+
+function resolveRollup(options: Manifest): BuildOptions["rollupOptions"] {
+  return {
+    input: removeUndefinedValues({
+      default_popup: options.action?.default_popup,
+      content_script: options.content_scripts?.[0]?.js?.[0],
+      background: options.background?.service_worker,
+    }),
+    output: {
+      assetFileNames: "assets/[name].[ext]",
+      chunkFileNames: "js/[name].js",
+      entryFileNames: "[name].js",
+    },
+  };
+}
+
 export function extension(options: Manifest): PluginOption {
   let config: ResolvedConfig | null = null;
   let server: ViteDevServer | null = null;
@@ -92,30 +121,30 @@ export function extension(options: Manifest): PluginOption {
     throw new Error("This extension does not support multiple content scripts yet");
   }
 
-  const contentScriptName = content_script?.js?.[0];
-
   function resolveManifest() {
     const host = resolveAddress();
+
+    const webAccessibleResources: WebAccessibleResource[] = [{ resources: ["assets/*"], matches: ["<all_urls>"] }];
+    if (content_script) {
+      webAccessibleResources.push({
+        resources: ["content_script.js", "js/*.js"],
+        matches: content_script.matches,
+      });
+    }
 
     const result: Manifest = {
       ...options,
       name: config?.command === "serve" ? `${options.name} [DEV]` : options.name,
-      content_scripts:
-        content_script && contentScriptName
-          ? [
-              {
-                ...content_script,
-                js: config?.command === "serve" ? ["content.js"] : [parse(contentScriptName).name + ".js"],
-              },
-            ]
-          : undefined,
-      background: options.background
-        ? {
-            service_worker:
-              config?.command === "serve" ? "background.js" : parse(options.background.service_worker).name + ".js",
-            type: "module",
-          }
-        : undefined,
+      content_scripts: options.content_scripts?.[0] && [
+        {
+          ...options.content_scripts[0],
+          js: ["content.js"],
+        },
+      ],
+      background: options.background && {
+        service_worker: "background.js",
+        type: "module",
+      },
       action: {
         ...options.action,
         default_popup: "default_popup.html",
@@ -126,6 +155,7 @@ export function extension(options: Manifest): PluginOption {
             ? `script-src 'self' ${host} 'wasm-unsafe-eval'; object-src 'self';`
             : options.content_security_policy.extension_pages,
       },
+      web_accessible_resources: webAccessibleResources,
     };
 
     return JSON.stringify(result, null, 2);
@@ -149,34 +179,11 @@ export function extension(options: Manifest): PluginOption {
     config(userConfig) {
       userConfig.build = {
         assetsInlineLimit: 0,
-        rollupOptions: {
-          input: {
-            ...(options?.action?.default_popup
-              ? {
-                  default_popup: options?.action?.default_popup,
-                }
-              : {}),
-            ...options?.content_scripts?.reduce<Record<string, string>>((res, script) => {
-              if (script.js && script.js[0]) {
-                res["content"] = script.js[0];
-              }
-              return res;
-            }, {}),
-            ...(options.background?.service_worker
-              ? {
-                  background: options.background.service_worker,
-                }
-              : {}),
-          },
-          output: {
-            assetFileNames: "assets/[name].[ext]",
-            entryFileNames: "[name].js",
-          },
-        },
+        rollupOptions: resolveRollup(options),
       };
     },
-    configResolved(resolvedConfig) {
-      config = resolvedConfig;
+    configResolved(_config) {
+      config = _config;
     },
     configureServer(_server) {
       server = _server;
@@ -190,22 +197,31 @@ export function extension(options: Manifest): PluginOption {
           await rm(outdir, { force: true, recursive: true });
           await mkdir(outdir, { recursive: true });
 
-          await Promise.all([
-            writeFile(join(outdir, "manifest.json"), resolveManifest()),
-            contentScriptName && writeFile(join(outdir, "content.js"), renderDevContent(host, [contentScriptName])),
-            options.background &&
-              writeFile(join(outdir, "background.js"), renderDevBackground(host, options.background.service_worker)),
-            options.action?.default_popup && writeFile(join(outdir, "default_popup.js"), renderDevScript(host)),
-            options.action?.default_popup &&
-              writeFile(
-                join(outdir, "default_popup.html"),
-                renderPopup(
-                  options.name ?? "Browser Extension",
-                  ["./default_popup.js", `${host}/@vite/client`, `${host}/${options.action.default_popup}`],
-                  []
-                )
-              ),
-          ]);
+          const contentScript = options.content_scripts?.[0]?.js?.[0];
+          if (contentScript) {
+            await writeFile(join(outdir, "content.js"), renderDevContent(host, [contentScript]));
+          }
+
+          if (options.background?.service_worker) {
+            await writeFile(
+              join(outdir, "background.js"),
+              renderDevBackground(host, options.background.service_worker)
+            );
+          }
+
+          if (options.action?.default_popup) {
+            await writeFile(join(outdir, "default_popup.js"), renderDevScript(host));
+            await writeFile(
+              join(outdir, "default_popup.html"),
+              renderPopup(
+                options.name ?? "Browser Extension",
+                ["./default_popup.js", `${host}/@vite/client`, `${host}/${options.action.default_popup}`],
+                []
+              )
+            );
+          }
+
+          await writeFile(join(outdir, "manifest.json"), resolveManifest());
         });
       }
     },
@@ -222,6 +238,15 @@ export function extension(options: Manifest): PluginOption {
             type: "asset",
             fileName: "default_popup.html",
             source: renderPopup(host, ["./default_popup.js"], ["./assets/default_popup.css"]),
+          });
+        }
+
+        const contentScript = options.content_scripts?.[0]?.js?.[0];
+        if (contentScript) {
+          this.emitFile({
+            type: "asset",
+            fileName: "content.js",
+            source: renderLines(['import(chrome.runtime.getURL("./content_script.js"))']),
           });
         }
       }
