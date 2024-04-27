@@ -21,10 +21,10 @@ export interface Manifest {
     service_worker: string;
     type: "module";
   };
-  content_security_policy: {
-    extension_pages: string;
+  content_security_policy?: {
+    extension_pages?: string;
   };
-  web_accessible_resources: WebAccessibleResource[];
+  web_accessible_resources?: WebAccessibleResource[];
 }
 
 export interface WebAccessibleResource {
@@ -153,7 +153,7 @@ export function extension(options: Manifest): PluginOption {
         extension_pages:
           host !== "."
             ? `script-src 'self' ${host} 'wasm-unsafe-eval'; object-src 'self';`
-            : options.content_security_policy.extension_pages,
+            : options.content_security_policy?.extension_pages,
       },
       web_accessible_resources: webAccessibleResources,
     };
