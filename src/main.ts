@@ -1,6 +1,7 @@
 import type { BuildOptions, PluginOption, ResolvedConfig, ViteDevServer } from "vite";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, parse } from "node:path";
+import { parseContentSecurityPolicy, serializeContentSecurityPolicy } from "./csp.js";
 
 export interface Manifest {
   manifest_version: number;
@@ -132,6 +133,13 @@ export function extension(options: Manifest): PluginOption {
       });
     }
 
+    const csp = parseContentSecurityPolicy(options.content_security_policy?.extension_pages ?? "");
+    if (config?.command === "serve") {
+      for (const key of csp.keys()) {
+        csp.get(key)?.push(host);
+      }
+    }
+
     const result: Manifest = {
       ...options,
       name: config?.command === "serve" ? `${options.name} [DEV]` : options.name,
@@ -150,10 +158,7 @@ export function extension(options: Manifest): PluginOption {
         default_popup: "default_popup.html",
       },
       content_security_policy: {
-        extension_pages:
-          host !== "."
-            ? `script-src 'self' ${host} 'wasm-unsafe-eval'; object-src 'self';`
-            : options.content_security_policy?.extension_pages,
+        extension_pages: serializeContentSecurityPolicy(csp),
       },
       web_accessible_resources: webAccessibleResources,
     };

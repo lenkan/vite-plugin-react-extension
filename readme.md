@@ -33,8 +33,7 @@ export default defineConfig({
         },
       ],
       content_security_policy: {
-        // Scripts needs to be able to load from localhost to enable HMR
-        extension_pages: "script-src 'self' 'http://localhost:*' 'wasm-unsafe-eval'; object-src 'self';",
+        extension_pages: "script-src 'self'; object-src 'self';",
       },
     }),
   ],
