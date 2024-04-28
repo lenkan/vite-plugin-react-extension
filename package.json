@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-extension",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Vite plugin for react based extension",
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
