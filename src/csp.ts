@@ -51,12 +51,12 @@ export function serializeContentSecurityPolicy(policy: Map<string, string[]>) {
   const result: string[] = [];
 
   for (const [key, value] of policy.entries()) {
-    if (value.length > 1) {
+    if (value.length > 0) {
       result.push(`${key} ${value.join(" ")}`);
     } else {
       result.push(key);
     }
   }
 
-  return result.join("; ");
+  return result.length >= 1 ? result.join("; ") + ";" : "";
 }
