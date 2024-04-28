@@ -1,5 +1,5 @@
 {
-  "name": "vite-plugin-extension",
+  "name": "vite-plugin-react-extension",
   "version": "0.0.7",
   "description": "Vite plugin for react based extension",
   "main": "dist/main.js",
