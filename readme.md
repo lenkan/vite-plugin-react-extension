@@ -6,7 +6,7 @@ Example usage:
 // vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { extension } from "vite-plugin-extension";
+import { extension } from "vite-plugin-react-extension";
 
 // https://vitejs.dev/config/
 export default defineConfig({

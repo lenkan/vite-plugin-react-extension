@@ -13,7 +13,7 @@
   "author": "Daniel Lenksjö",
   "license": "MIT",
   "repository": {
-    "url": "git+https://github.com/lenkan/vite-plugin-extension.git"
+    "url": "git+https://github.com/lenkan/vite-plugin-react-extension.git"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",
