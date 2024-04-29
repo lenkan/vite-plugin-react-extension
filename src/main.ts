@@ -1,4 +1,4 @@
-import type { BuildOptions, PluginOption, ResolvedConfig, ViteDevServer } from "vite";
+import type { BuildOptions, Plugin, ResolvedConfig, ViteDevServer } from "vite";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, parse } from "node:path";
 import { parseContentSecurityPolicy, serializeContentSecurityPolicy } from "./csp.js";
@@ -25,6 +25,7 @@ export interface Manifest {
   content_security_policy?: {
     extension_pages?: string;
   };
+  icons?: Record<string, string>;
   web_accessible_resources?: WebAccessibleResource[];
 }
 
@@ -109,7 +110,7 @@ function resolveRollup(options: Manifest): BuildOptions["rollupOptions"] {
   };
 }
 
-export function extension(options: Manifest): PluginOption {
+export function extension(options: Manifest): Plugin {
   let config: ResolvedConfig | null = null;
   let server: ViteDevServer | null = null;
 
