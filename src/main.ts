@@ -1,5 +1,5 @@
 import type { BuildOptions, Plugin, ResolvedConfig, ViteDevServer } from "vite";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, parse } from "node:path";
 import { parseContentSecurityPolicy, serializeContentSecurityPolicy } from "./csp.js";
 
@@ -224,6 +224,15 @@ export function extension(options: Manifest): Plugin {
                 ["./default_popup.js", `${host}/@vite/client`, `${host}/${options.action.default_popup}`],
                 []
               )
+            );
+          }
+
+          const publicDir = config?.publicDir;
+          if (publicDir) {
+            await Promise.all(
+              Object.values(options.icons ?? {}).map((iconFileName) => {
+                return cp(join(publicDir, iconFileName), join(outdir, iconFileName));
+              })
             );
           }
 
