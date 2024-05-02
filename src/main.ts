@@ -184,6 +184,7 @@ export function extension(options: Manifest): Plugin {
     name: "vite-extension",
     config(userConfig) {
       userConfig.build = {
+        ...userConfig.build,
         assetsInlineLimit: 0,
         rollupOptions: resolveRollup(options),
       };
@@ -200,7 +201,6 @@ export function extension(options: Manifest): Plugin {
           const host = resolveAddress();
           const outdir = config?.build.outDir ?? "dist";
 
-          await rm(outdir, { force: true, recursive: true });
           await mkdir(outdir, { recursive: true });
 
           const contentScript = options.content_scripts?.[0]?.js?.[0];
@@ -248,6 +248,7 @@ export function extension(options: Manifest): Plugin {
           fileName: "manifest.json",
           source: resolveManifest(),
         });
+
         if (options.action?.default_popup) {
           this.emitFile({
             type: "asset",
