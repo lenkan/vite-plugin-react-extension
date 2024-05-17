@@ -26,6 +26,7 @@ export interface Manifest {
     extension_pages?: string;
   };
   icons?: Record<string, string>;
+  host_permissions?: string[];
   web_accessible_resources?: WebAccessibleResource[];
 }
 
