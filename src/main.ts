@@ -55,7 +55,6 @@ function renderPopup(title: string, scripts: string[], styles: string[]) {
     `<html lang="en">`,
     `<head>`,
     `<meta charset="UTF-8" />`,
-    `<title>${title}</title>`,
     ...styles.map((s) => `<link rel="stylesheet" href="${s}">`),
     `</head>`,
     `<body>`,
