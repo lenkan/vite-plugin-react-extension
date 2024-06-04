@@ -1,4 +1,5 @@
-import type { BuildOptions, Plugin, ResolvedConfig, ViteDevServer } from "vite";
+import { type BuildOptions, type Plugin, type ResolvedConfig, type ViteDevServer } from "vite";
+import esbuild from "esbuild";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, parse } from "node:path";
 import { parseContentSecurityPolicy, serializeContentSecurityPolicy } from "./csp.js";
@@ -96,21 +97,6 @@ function removeUndefinedValues(obj: Record<string, string | undefined>): Record<
   }, {});
 }
 
-function resolveRollup(options: Manifest): BuildOptions["rollupOptions"] {
-  return {
-    input: removeUndefinedValues({
-      default_popup: options.action?.default_popup,
-      content_script: options.content_scripts?.[0]?.js?.[0],
-      background: options.background?.service_worker,
-    }),
-    output: {
-      assetFileNames: "assets/[name].[ext]",
-      chunkFileNames: "js/[name].js",
-      entryFileNames: "[name].js",
-    },
-  };
-}
-
 export function extension(options: Manifest): Plugin {
   let config: ResolvedConfig | null = null;
   let server: ViteDevServer | null = null;
@@ -124,16 +110,25 @@ export function extension(options: Manifest): Plugin {
     throw new Error("This extension does not support multiple content scripts yet");
   }
 
+  function resolveRollup(options: Manifest): BuildOptions["rollupOptions"] {
+    return {
+      input: removeUndefinedValues({
+        default_popup: options.action?.default_popup,
+        content_script: config?.command === "build" ? options.content_scripts?.[0]?.js?.[0] : undefined,
+        background: options.background?.service_worker,
+      }),
+      output: {
+        assetFileNames: "assets/[name].[ext]",
+        chunkFileNames: "js/[name].js",
+        entryFileNames: "[name].js",
+      },
+    };
+  }
+
   function resolveManifest() {
     const host = resolveAddress();
 
-    const webAccessibleResources: WebAccessibleResource[] = [{ resources: ["assets/*"], matches: ["<all_urls>"] }];
-    if (content_script) {
-      webAccessibleResources.push({
-        resources: ["content_script.js", "js/*.js"],
-        matches: content_script.matches,
-      });
-    }
+    const webAccessibleResources: WebAccessibleResource[] = [...(options.web_accessible_resources ?? [])];
 
     const csp = parseContentSecurityPolicy(options.content_security_policy?.extension_pages ?? "");
     if (config?.command === "serve") {
@@ -260,10 +255,19 @@ export function extension(options: Manifest): Plugin {
 
         const contentScript = options.content_scripts?.[0]?.js?.[0];
         if (contentScript) {
+          const source = await esbuild.build({
+            entryPoints: [contentScript],
+            format: "iife",
+            bundle: true,
+            platform: "browser",
+            write: false,
+            minify: true,
+          });
+
           this.emitFile({
             type: "asset",
             fileName: "content.js",
-            source: renderLines(['import(chrome.runtime.getURL("./content_script.js"))']),
+            source: source.outputFiles[0].text,
           });
         }
       }
