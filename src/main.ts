@@ -1,8 +1,16 @@
-import { type BuildOptions, type Plugin, type ResolvedConfig, type ViteDevServer } from "vite";
+import { type BuildOptions, type Plugin, type ResolvedConfig, type ViteDevServer, Rollup } from "vite";
 import esbuild from "esbuild";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
-import { join, parse, relative } from "node:path";
+import { dirname, join, parse, relative } from "node:path";
 import { parseContentSecurityPolicy, serializeContentSecurityPolicy } from "./csp.js";
+import { findCommonAncestor } from "./common-ancestor.js";
+
+export interface ManifestContentScript {
+  matches?: string[];
+  js?: string[];
+  run_at?: "document_end" | "document_start" | "document_idle";
+  all_frames?: boolean;
+}
 
 export interface Manifest {
   manifest_version: number;
@@ -27,12 +35,7 @@ export interface Manifest {
   action?: {
     default_popup?: string;
   };
-  content_scripts?: {
-    matches?: string[];
-    js?: string[];
-    run_at?: "document_end";
-    all_frames?: boolean;
-  }[];
+  content_scripts?: ManifestContentScript[];
   background?: {
     service_worker: string;
     type: "module";
@@ -115,6 +118,31 @@ export function extension(options: Manifest): Plugin {
   let config: ResolvedConfig | null = null;
   let server: ViteDevServer | null = null;
 
+  async function bundleScript(script: string): Promise<{ filename: string; content: Uint8Array }> {
+    const outdir = config?.build.outDir;
+    if (!outdir) {
+      throw new Error("No outdir");
+    }
+
+    const outfile = join(outdir, relative(basepath, script.replace(/\.tsx?$/, ".js")));
+
+    const source = await esbuild.build({
+      entryPoints: [script],
+      outfile,
+      format: "iife",
+      bundle: true,
+      platform: "browser",
+      write: false,
+      minify: true,
+    });
+
+    if (!source.outputFiles) {
+      throw new Error("No outputfile");
+    }
+
+    return { filename: relative(outdir, outfile), content: source.outputFiles[0].contents };
+  }
+
   function resolveManifest(override: Partial<Manifest>) {
     const host = resolveAddress();
 
@@ -160,6 +188,9 @@ export function extension(options: Manifest): Plugin {
 
     return `http://localhost:${addr.port}`;
   }
+
+  const contentScriptFiles = options.content_scripts?.flatMap((cs) => cs.js ?? []) ?? [];
+  const basepath = findCommonAncestor(...contentScriptFiles);
 
   return {
     name: "vite-extension",
@@ -212,10 +243,21 @@ export function extension(options: Manifest): Plugin {
 
           await mkdir(outdir, { recursive: true });
 
-          const contentScript = options.content_scripts?.[0]?.js?.[0];
-          if (contentScript) {
-            await writeFile(join(outdir, "content.js"), renderDevContent(host, [contentScript]));
-          }
+          const contentScripts = await Promise.all(
+            (options.content_scripts ?? []).map(async (contentScript) => {
+              return {
+                ...contentScript,
+                js: await Promise.all(
+                  (contentScript.js ?? []).map(async (script) => {
+                    const outfile = join(outdir, relative(basepath, script.replace(/\.tsx?$/, ".js")));
+                    await mkdir(dirname(outfile), { recursive: true });
+                    await writeFile(outfile, renderDevContent(host, [script]));
+                    return relative(outdir, outfile);
+                  })
+                ),
+              };
+            })
+          );
 
           if (options.background?.service_worker) {
             await writeFile(
@@ -245,38 +287,32 @@ export function extension(options: Manifest): Plugin {
             );
           }
 
-          await writeFile(join(outdir, "manifest.json"), resolveManifest({}));
+          await writeFile(
+            join(outdir, "manifest.json"),
+            resolveManifest({
+              content_scripts: contentScripts.filter((cs) => !!cs.matches && cs.matches.length > 0),
+            })
+          );
         });
       }
     },
     async generateBundle(a, bundle) {
       if (config?.command === "build") {
-        const outdir = config.build.outDir;
         const contentScripts = await Promise.all(
           (options.content_scripts ?? []).map(async (contentScript) => {
             return {
               ...contentScript,
               js: await Promise.all(
                 (contentScript.js ?? []).map(async (script) => {
-                  const source = await esbuild.build({
-                    entryPoints: [script],
-                    outdir,
-                    format: "iife",
-                    bundle: true,
-                    platform: "browser",
-                    write: false,
-                    minify: true,
-                  });
-
-                  const outfile = relative(outdir, source.outputFiles[0].path);
+                  const result = await bundleScript(script);
 
                   this.emitFile({
                     type: "asset",
-                    fileName: outfile,
-                    source: source.outputFiles[0].contents,
+                    fileName: result.filename,
+                    source: result.content,
                   });
 
-                  return outfile;
+                  return result.filename;
                 })
               ),
             };
@@ -288,7 +324,7 @@ export function extension(options: Manifest): Plugin {
           type: "asset",
           fileName: "manifest.json",
           source: resolveManifest({
-            content_scripts: contentScripts,
+            content_scripts: contentScripts.filter((cs) => !!cs.matches && cs.matches.length > 0),
           }),
         });
 
