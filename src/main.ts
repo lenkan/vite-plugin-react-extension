@@ -1,7 +1,7 @@
 import { type BuildOptions, type Plugin, type ResolvedConfig, type ViteDevServer } from "vite";
 import esbuild from "esbuild";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
-import { join, parse } from "node:path";
+import { join, parse, relative } from "node:path";
 import { parseContentSecurityPolicy, serializeContentSecurityPolicy } from "./csp.js";
 
 export interface Manifest {
@@ -115,31 +115,7 @@ export function extension(options: Manifest): Plugin {
   let config: ResolvedConfig | null = null;
   let server: ViteDevServer | null = null;
 
-  if (options.content_scripts && options.content_scripts.length > 1) {
-    throw new Error("This extension does not support multiple content scripts yet");
-  }
-
-  const content_script = options.content_scripts?.[0];
-  if (content_script?.js && content_script.js.length > 1) {
-    throw new Error("This extension does not support multiple content scripts yet");
-  }
-
-  function resolveRollup(options: Manifest): BuildOptions["rollupOptions"] {
-    return {
-      input: removeUndefinedValues({
-        default_popup: options.action?.default_popup,
-        content_script: config?.command === "build" ? options.content_scripts?.[0]?.js?.[0] : undefined,
-        background: options.background?.service_worker,
-      }),
-      output: {
-        assetFileNames: "assets/[name].[ext]",
-        chunkFileNames: "js/[name].js",
-        entryFileNames: "[name].js",
-      },
-    };
-  }
-
-  function resolveManifest() {
+  function resolveManifest(override: Partial<Manifest>) {
     const host = resolveAddress();
 
     const webAccessibleResources: WebAccessibleResource[] = [...(options.web_accessible_resources ?? [])];
@@ -154,12 +130,6 @@ export function extension(options: Manifest): Plugin {
     const result: Manifest = {
       ...options,
       name: config?.command === "serve" ? `${options.name} [DEV]` : options.name,
-      content_scripts: options.content_scripts?.[0] && [
-        {
-          ...options.content_scripts[0],
-          js: ["content.js"],
-        },
-      ],
       background: options.background && {
         service_worker: "background.js",
         type: "module",
@@ -172,6 +142,7 @@ export function extension(options: Manifest): Plugin {
         extension_pages: serializeContentSecurityPolicy(csp),
       },
       web_accessible_resources: webAccessibleResources,
+      ...override,
     };
 
     return JSON.stringify(result, null, 2);
@@ -193,11 +164,39 @@ export function extension(options: Manifest): Plugin {
   return {
     name: "vite-extension",
     config(userConfig) {
+      userConfig.esbuild = {
+        // format: "iife",
+        // platform: "browser",
+        // target: "chrome58",
+      };
+      // this.info("Config");
+
       userConfig.build = {
         ...userConfig.build,
         assetsInlineLimit: 0,
-        rollupOptions: resolveRollup(options),
+        target: "chrome58",
+        rollupOptions: {
+          input: removeUndefinedValues({
+            default_popup: options.action?.default_popup,
+            // content_script: config?.command === "build" ? options.content_scripts?.[0]?.js?.[0] : undefined,
+            background: options.background?.service_worker,
+          }),
+          output: {
+            assetFileNames: "assets/[name].[ext]",
+            entryFileNames: "[name].js",
+            // inlineDynamicImports: true,
+            // format: "module",
+            // compact
+          },
+        },
+        // write: false,
       };
+    },
+    transform(code, id, options) {
+      this.info(`Transform ${id}\n`);
+    },
+    renderChunk(d, chunk) {
+      this.info(`Render chunk ${chunk.fileName}\n`);
     },
     configResolved(_config) {
       config = _config;
@@ -246,17 +245,51 @@ export function extension(options: Manifest): Plugin {
             );
           }
 
-          await writeFile(join(outdir, "manifest.json"), resolveManifest());
+          await writeFile(join(outdir, "manifest.json"), resolveManifest({}));
         });
       }
     },
-    async generateBundle() {
+    async generateBundle(a, bundle) {
       if (config?.command === "build") {
+        const outdir = config.build.outDir;
+        const contentScripts = await Promise.all(
+          (options.content_scripts ?? []).map(async (contentScript) => {
+            return {
+              ...contentScript,
+              js: await Promise.all(
+                (contentScript.js ?? []).map(async (script) => {
+                  const source = await esbuild.build({
+                    entryPoints: [script],
+                    outdir,
+                    format: "iife",
+                    bundle: true,
+                    platform: "browser",
+                    write: false,
+                    minify: true,
+                  });
+
+                  const outfile = relative(outdir, source.outputFiles[0].path);
+
+                  this.emitFile({
+                    type: "asset",
+                    fileName: outfile,
+                    source: source.outputFiles[0].contents,
+                  });
+
+                  return outfile;
+                })
+              ),
+            };
+          })
+        );
+
         const host = resolveAddress();
         this.emitFile({
           type: "asset",
           fileName: "manifest.json",
-          source: resolveManifest(),
+          source: resolveManifest({
+            content_scripts: contentScripts,
+          }),
         });
 
         if (options.action?.default_popup) {
@@ -264,24 +297,6 @@ export function extension(options: Manifest): Plugin {
             type: "asset",
             fileName: "default_popup.html",
             source: renderPopup(host, ["./default_popup.js"], ["./assets/default_popup.css"]),
-          });
-        }
-
-        const contentScript = options.content_scripts?.[0]?.js?.[0];
-        if (contentScript) {
-          const source = await esbuild.build({
-            entryPoints: [contentScript],
-            format: "iife",
-            bundle: true,
-            platform: "browser",
-            write: false,
-            minify: true,
-          });
-
-          this.emitFile({
-            type: "asset",
-            fileName: "content.js",
-            source: source.outputFiles[0].text,
           });
         }
       }
