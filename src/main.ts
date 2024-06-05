@@ -7,9 +7,23 @@ import { parseContentSecurityPolicy, serializeContentSecurityPolicy } from "./cs
 export interface Manifest {
   manifest_version: number;
   version?: string;
+  description?: string;
+  author?: string;
   version_name?: string;
   name?: string;
   permissions?: string[];
+  chrome_url_overrides?: {
+    bookmarks?: string;
+    history?: string;
+    newtap?: string;
+  };
+  commands?: Record<
+    string,
+    {
+      suggested_key?: Record<string, string>;
+      description?: string;
+    }
+  >;
   action?: {
     default_popup?: string;
   };
@@ -29,6 +43,7 @@ export interface Manifest {
   icons?: Record<string, string>;
   host_permissions?: string[];
   web_accessible_resources?: WebAccessibleResource[];
+  [key: string]: unknown;
 }
 
 export interface WebAccessibleResource {
