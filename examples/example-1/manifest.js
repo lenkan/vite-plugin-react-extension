@@ -2,10 +2,10 @@ import { defineManifest } from "../../dist/manifest.js";
 
 export default defineManifest({
   manifest_version: 3,
-  // version: "0.0.1",
+  version: "0.0.1",
   name: "Example 1",
   action: {
-    default_popup: "src/popup.tsx",
+    default_popup: "popup.html",
   },
   content_security_policy: {
     extension_pages: "script-src 'self';",
