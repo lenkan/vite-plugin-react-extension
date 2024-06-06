@@ -4,6 +4,8 @@ import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, parse, relative } from "node:path";
 import { parseContentSecurityPolicy, serializeContentSecurityPolicy } from "./csp.js";
 import { findCommonAncestor } from "./common-ancestor.js";
+import { renderLines } from "./utils.js";
+import { renderPopup } from "./popup.js";
 
 export interface ManifestContentScript {
   matches?: string[];
@@ -65,26 +67,6 @@ function renderDevScript(prefix: string) {
     `window.__vite_plugin_react_preamble_installed__ = true;`,
     `chrome.runtime.getURL = p => "${prefix}" + p;`,
   ]);
-}
-
-function renderPopup(title: string, scripts: string[], styles: string[]) {
-  return renderLines([
-    `<!doctype html>`,
-    `<html lang="en">`,
-    `<head>`,
-    `<meta charset="UTF-8" />`,
-    ...styles.map((s) => `<link rel="stylesheet" href="${s}">`),
-    `</head>`,
-    `<body>`,
-    `<div id="root"></div>`,
-    ...scripts.map((s) => `<script type="module" src="${s}"></script>`),
-    `</body>`,
-    `</html>`,
-  ]);
-}
-
-function renderLines(lines: string[]) {
-  return lines.join("\n") + "\n";
 }
 
 function renderDevBackground(prefix: string, backgroundScript: string) {
@@ -270,11 +252,7 @@ export function extension(options: Manifest): Plugin {
             await writeFile(join(outdir, "default_popup.js"), renderDevScript(host));
             await writeFile(
               join(outdir, "default_popup.html"),
-              renderPopup(
-                options.name ?? "Browser Extension",
-                ["./default_popup.js", `${host}/@vite/client`, `${host}/${options.action.default_popup}`],
-                []
-              )
+              renderPopup(["./default_popup.js", `${host}/@vite/client`, `${host}/${options.action.default_popup}`], [])
             );
           }
 
@@ -332,7 +310,7 @@ export function extension(options: Manifest): Plugin {
           this.emitFile({
             type: "asset",
             fileName: "default_popup.html",
-            source: renderPopup(host, ["./default_popup.js"], ["./assets/default_popup.css"]),
+            source: renderPopup(["./default_popup.js"], ["./assets/default_popup.css"]),
           });
         }
       }
