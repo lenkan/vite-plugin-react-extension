@@ -1,3 +1,4 @@
+import "../../../dist/reload.js";
 import { TEXT } from "./shared/mod.ts";
 
-console.log(TEXT);
+console.log(TEXT + "Hej!");

@@ -1,10 +1,12 @@
-import esbuild, { context, type BuildContext, type BuildOptions } from "esbuild";
+import esbuild, { type BuildOptions } from "esbuild";
 import { join, relative, resolve } from "node:path";
-import type { Manifest } from "./main.js";
 import { readFile, writeFile } from "node:fs/promises";
+import type { Manifest } from "./manifest.js";
 
 const workingDirectory = process.cwd();
 const outdir = join(workingDirectory, "dist");
+const env = process.argv.includes("--watch") ? "development" : "production";
+const port = process.env.PORT ?? "8000";
 const { default: manifest } = (await import(join(workingDirectory, "manifest.js"))) as { default: Manifest };
 
 if (!manifest) {
@@ -124,6 +126,12 @@ async function build(): Promise<BuildOptions> {
     logLevel: "debug",
     bundle: true,
     metafile: true,
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(env),
+      "process.env.PORT": JSON.stringify(port),
+      "process.env.BACKGROUND_SCRIPT": JSON.stringify("/background.js"),
+      "process.env.POPUP_SCRIPT": JSON.stringify("/popup/main.js"),
+    },
     plugins: [
       {
         name: "manifest",
@@ -137,9 +145,11 @@ async function build(): Promise<BuildOptions> {
 
 const options = await build();
 
-if (process.argv.includes("--watch")) {
+if (env === "development") {
   const ctx = await esbuild.context(options);
   await ctx.watch();
+  await ctx.serve();
+  process.on("SIGTERM", () => ctx.cancel());
 } else {
   await esbuild.build(options);
 }

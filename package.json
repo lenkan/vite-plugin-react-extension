@@ -16,6 +16,7 @@
     "url": "git+https://github.com/lenkan/vite-plugin-react-extension.git"
   },
   "devDependencies": {
+    "@types/chrome": "^0.0.268",
     "@types/node": "^20.12.7",
     "@vitejs/plugin-react": "^4.3.0",
     "chokidar": "^3.6.0",
