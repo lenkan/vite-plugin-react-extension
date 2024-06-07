@@ -1,7 +1,10 @@
 import esbuild, { type BuildOptions } from "esbuild";
+import { format } from "prettier";
 import { join, relative, resolve } from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import type { Manifest } from "./manifest.js";
+import { serve } from "./serve.js";
+import { findScripts } from "./utils.js";
 
 const workingDirectory = process.cwd();
 const outdir = join(workingDirectory, "dist");
@@ -57,17 +60,6 @@ function resolveManifest(result: esbuild.BuildResult, manifest: Manifest): Manif
   };
 }
 
-function findScripts(doc: string): string[] {
-  const regex = /<script\s+src=\"(.*)\">\s*<\/script>/;
-  const match = regex.exec(doc);
-
-  if (match) {
-    return [match[1]];
-  }
-
-  return [];
-}
-
 async function resolvePopupDocument(content: string, result: esbuild.BuildResult): Promise<string> {
   const scripts = findScripts(content);
 
@@ -93,6 +85,14 @@ async function readPopupDocument(manifest: Manifest): Promise<string | null> {
   return await readFile(join(workingDirectory, manifest.action.default_popup), "utf8");
 }
 
+async function write(path: string, content: string) {
+  const current = await readFile(path, "utf8").catch(() => "");
+  const formatted = await format(content, { filepath: path });
+  if (current !== formatted) {
+    await writeFile(path, formatted);
+  }
+}
+
 async function build(): Promise<BuildOptions> {
   const entryPoints: string[] = [];
   const popupDocument = await readPopupDocument(manifest);
@@ -111,11 +111,11 @@ async function build(): Promise<BuildOptions> {
   }
 
   async function handleBuild(result: esbuild.BuildResult) {
-    await writeFile(join(outdir, "manifest.json"), JSON.stringify(resolveManifest(result, manifest), null, 2));
+    await write(join(outdir, "manifest.json"), JSON.stringify(resolveManifest(result, manifest), null, 2));
     if (popupDocument) {
       const doc = await resolvePopupDocument(popupDocument, result);
       if (doc) {
-        await writeFile(join(outdir, "index.html"), doc);
+        await write(join(outdir, "index.html"), doc);
       }
     }
   }
@@ -126,11 +126,10 @@ async function build(): Promise<BuildOptions> {
     logLevel: "debug",
     bundle: true,
     metafile: true,
+    entryNames: "[dir]/[name]-[hash]",
     define: {
       "process.env.NODE_ENV": JSON.stringify(env),
-      "process.env.PORT": JSON.stringify(port),
-      "process.env.BACKGROUND_SCRIPT": JSON.stringify("/background.js"),
-      "process.env.POPUP_SCRIPT": JSON.stringify("/popup/main.js"),
+      "process.env.DEV_SERVER_URL": JSON.stringify(`http://localhost:8000`),
     },
     plugins: [
       {
@@ -147,9 +146,17 @@ const options = await build();
 
 if (env === "development") {
   const ctx = await esbuild.context(options);
+  const controller = new AbortController();
+
+  process.on("SIGTERM", async () => {
+    console.log("SIGTERM");
+    await ctx.cancel();
+    controller.abort();
+  });
+
   await ctx.watch();
-  await ctx.serve();
-  process.on("SIGTERM", () => ctx.cancel());
+  await serve({ dir: outdir, port: parseInt(port), signal: controller.signal });
 } else {
+  await rm(outdir, { force: true, recursive: true });
   await esbuild.build(options);
 }

@@ -3,7 +3,7 @@
   "scripts": {
     "dev": "vite",
     "build": "node ../../dist/build.js",
-    "build:watch": "node --watch ../../dist/build.js --watch"
+    "build:watch": "node ../../dist/build.js --watch"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
