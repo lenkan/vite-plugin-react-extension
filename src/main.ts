@@ -196,7 +196,10 @@ export function extension(options: Manifest): Plugin {
       userConfig.build = {
         ...userConfig.build,
         assetsInlineLimit: 0,
-        rollupOptions: resolveRollup(options),
+        rollupOptions: {
+          ...userConfig.build?.rollupOptions,
+          ...resolveRollup(options),
+        },
       };
     },
     configResolved(_config) {
